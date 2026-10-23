@@ -54,16 +54,23 @@ def days_left(dl):
 
 
 def match(item, subs):
-    """返回命中的订阅名列表。subs: [{name, keywords, min_budget, max_days_left}]"""
+    """返回命中的订阅名列表。
+    subs: [{name, keywords, provinces, min_budget, max_budget, max_days_left}]
+    """
     hits = []
     text = " ".join(str(item.get(k) or "") for k in
                     ("title", "category", "agency", "region", "body_head"))
     budget = item.get("budget_cny") or 0
     left = days_left(item.get("deadline"))
+    prov = item.get("province") or ""
 
     for s in subs:
         kws = s.get("keywords") or []
         if kws and not any(k.lower() in text.lower() for k in kws):
+            continue
+        # 省份白名单：配了就只推这些省
+        provs = s.get("provinces") or []
+        if provs and prov not in provs:
             continue
         if s.get("min_budget") and budget < s["min_budget"]:
             continue
@@ -78,13 +85,15 @@ def match(item, subs):
 
 def build_digest(matched, cfg):
     today = datetime.now().strftime("%Y-%m-%d")
-    lines = [f"【招标日报】{today}　共 {len(matched)} 条命中订阅", ""]
+    total = sum(len(v) for v in matched.values())
+    lines = [f"【招标日报】{today}　共 {total} 条命中订阅", ""]
     for sub, items in matched.items():
         lines.append(f"■ {sub}（{len(items)} 条）")
         for r in items:
             left = days_left(r.get("deadline"))
             left_s = f"剩{left}天" if left is not None and left >= 0 else ""
-            lines.append(f"  · {r.get('title')}")
+            prov = r.get("province") or "—"
+            lines.append(f"  · [{prov}] {r.get('title')}")
             lines.append(f"    预算 {money_cn(r.get('budget_cny'))} | 截止 {r.get('deadline') or '—'} {left_s}")
             lines.append(f"    {r.get('agency') or '—'} | {r.get('url')}")
         lines.append("")

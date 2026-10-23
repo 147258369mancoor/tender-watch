@@ -92,8 +92,10 @@ def main():
         "run_at": datetime.now().isoformat(timespec="seconds"),
         "list_ok": len(items) > 0,
         "detail_errors": len(src.get("errors", [])),
+        "sources": src.get("sources", []),
         "tender_count": len(tenders),
         "fresh_count": len(fresh),
+        "province_coverage": len({r.get("province") for r in tenders if r.get("province")}),
         "budget_fill_rate": round(
             sum(1 for r in tenders if r.get("budget_cny")) / len(tenders), 3) if tenders else 0,
         "deadline_fill_rate": round(
@@ -115,10 +117,11 @@ def main():
     health["status"] = "ALERT" if alerts else "OK"
 
     # ---- 生成 Markdown ----
+    src_names = " + ".join(src.get("sources", ["中国政府采购网"]))
     lines = [f"# 政府采购招标日报 · {today}", ""]
-    lines.append(f"数据源：中国政府采购网 中央公告　采集 {len(items)} 条，"
+    lines.append(f"数据源：{src_names}　采集 {len(items)} 条（去重 {src.get('duplicates_removed', 0)}），"
                  f"其中招标类 {len(tenders)} 条，今日新增 {len(today_list)} 条"
-                 f"（本次运行新增 {len(fresh)} 条）。")
+                 f"（本次运行新增 {len(fresh)} 条），覆盖 {health['province_coverage']} 个省份。")
     lines.append("")
     if alerts:
         lines.append("> ⚠️ 自检告警：" + "；".join(alerts))
@@ -131,18 +134,26 @@ def main():
                          f"{money_cn(it.get('budget_cny'))}，截止 {c['was'].get('deadline')} → {it.get('deadline')}")
         lines.append("")
 
-    lines.append(f"## 今日新增招标 {len(today_list)} 条（按预算降序）")
-    lines.append("")
+    # 按省份分组输出
+    by_prov = {}
     for r in today_list:
-        dl = r.get("deadline", "")
-        left = days_left(dl)
-        left_s = f"（剩 {left} 天）" if left is not None and left >= 0 else ""
-        lines.append(f"### {r.get('title') or '（无标题）'}")
-        lines.append(f"- 预算：**{money_cn(r.get('budget_cny'))}**")
-        lines.append(f"- 截止：{dl or '—'} {left_s}")
-        lines.append(f"- 采购单位：{r.get('agency') or '—'}")
-        lines.append(f"- 地区/品目：{r.get('region') or '—'} / {r.get('category') or '—'}　编号：{r.get('project_no') or '—'}")
-        lines.append(f"- 原文：{r.get('url')}")
+        by_prov.setdefault(r.get("province") or "其他", []).append(r)
+
+    lines.append(f"## 今日新增招标 {len(today_list)} 条（按省份分组，组内按预算降序）")
+    lines.append("")
+    for prov in sorted(by_prov, key=lambda p: (p == "其他", -len(by_prov[p]))):
+        group = by_prov[prov]
+        total = sum(r.get("budget_cny") or 0 for r in group)
+        lines.append(f"### {prov}（{len(group)} 条，合计 {money_cn(total)}）")
+        lines.append("")
+        for r in group:
+            dl = r.get("deadline", "")
+            left = days_left(dl)
+            left_s = f"（剩 {left} 天）" if left is not None and left >= 0 else ""
+            lines.append(f"- **{r.get('title') or '（无标题）'}**")
+            lines.append(f"  - 预算 {money_cn(r.get('budget_cny'))} ｜ 截止 {dl or '—'} {left_s}")
+            lines.append(f"  - {r.get('agency') or '—'} ｜ {r.get('region') or '—'} ｜ {r.get('category') or '—'}")
+            lines.append(f"  - {r.get('url')}")
         lines.append("")
 
     md = "\n".join(lines)
@@ -157,8 +168,10 @@ def main():
         if left is not None:
             cls = "hot" if left <= 7 else ("warm" if left <= 14 else "cold")
             badge = f'<span class="badge {cls}">剩 {left} 天</span>'
+        prov = r.get("province") or "—"
         rows_html.append(f"""
         <tr>
+          <td class="prov"><span class="tag">{prov}</span></td>
           <td class="budget">{money_cn(r.get('budget_cny'))}</td>
           <td>
             <div class="t"><a href="{r.get('url')}" target="_blank">{r.get('title') or '（无标题）'}</a></div>
@@ -166,6 +179,19 @@ def main():
           </td>
           <td class="dl">{dl or '—'} {badge}</td>
         </tr>""")
+
+    # 省份分布条形
+    prov_counts = {}
+    for r in today_list:
+        p = r.get("province") or "其他"
+        prov_counts[p] = prov_counts.get(p, 0) + 1
+    max_c = max(prov_counts.values()) if prov_counts else 1
+    bars = "".join(
+        f'<div class="bar"><span class="bn">{p}</span>'
+        f'<span class="bf" style="width:{(c/max_c*100):.0f}%"></span>'
+        f'<span class="bc">{c}</span></div>'
+        for p, c in sorted(prov_counts.items(), key=lambda x: -x[1])
+    )
 
     alert_html = ""
     if alerts:
@@ -191,6 +217,9 @@ th {{ font-size:12px; color:var(--mut); font-weight:600; letter-spacing:.04em; }
 tr:last-child td {{ border-bottom:none; }}
 tr:hover td {{ background:#1c2029; }}
 .budget {{ white-space:nowrap; font-weight:700; color:#7ee0a0; font-variant-numeric:tabular-nums; }}
+.prov {{ white-space:nowrap; }}
+.tag {{ display:inline-block; padding:2px 8px; border-radius:6px; font-size:12px;
+  background:#1e2a3a; color:#8ec5ff; }}
 .t a {{ color:var(--fg); text-decoration:none; font-weight:600; }}
 .t a:hover {{ color:var(--acc); }}
 .meta {{ color:var(--mut); font-size:12px; margin-top:4px; }}
@@ -201,13 +230,21 @@ tr:hover td {{ background:#1c2029; }}
 .cold {{ background:#1d3a2a; color:#9ae0b8; }}
 .empty {{ padding:40px; text-align:center; color:var(--mut); }}
 .foot {{ margin-top:16px; color:var(--mut); font-size:12px; }}
+.stats {{ margin-bottom:18px; background:var(--card); border:1px solid var(--line);
+  border-radius:12px; padding:14px 16px; }}
+.stats h3 {{ margin:0 0 10px; font-size:13px; color:var(--mut); font-weight:600; }}
+.bar {{ display:flex; align-items:center; gap:8px; margin:4px 0; font-size:12px; }}
+.bn {{ width:52px; color:var(--mut); text-align:right; }}
+.bf {{ height:8px; background:linear-gradient(90deg,#2d5f8f,#4da3ff); border-radius:4px; min-width:2px; }}
+.bc {{ color:var(--mut); }}
 </style></head><body><div class="wrap">
 <h1>政府采购招标日报</h1>
-<div class="sub">{today} · 数据源 中国政府采购网 中央公告 · 采集 {len(items)} 条 / 招标 {len(tenders)} 条 / 新增 {len(fresh)} 条</div>
+<div class="sub">{today} · 数据源 {src_names} · 采集 {len(items)} 条（去重 {src.get('duplicates_removed', 0)}）/ 招标 {len(tenders)} 条 / 今日新增 {len(today_list)} 条 / 覆盖 {health['province_coverage']} 省</div>
 {alert_html}
+<div class="stats"><h3>省份分布</h3>{bars or '<span style="color:#8b93a7">今日无新增</span>'}</div>
 <div class="card">
-<table><thead><tr><th style="width:110px">预算</th><th>项目</th><th style="width:170px">截止</th></tr></thead>
-<tbody>{''.join(rows_html) or '<tr><td colspan="3" class="empty">今天没有新增招标公告</td></tr>'}</tbody></table>
+<table><thead><tr><th style="width:70px">省份</th><th style="width:110px">预算</th><th>项目</th><th style="width:170px">截止</th></tr></thead>
+<tbody>{''.join(rows_html) or '<tr><td colspan="4" class="empty">今天没有新增招标公告</td></tr>'}</tbody></table>
 </div>
 <div class="foot">只收录公开页面信息，不含任何个人信息。生成于 {datetime.now().strftime('%Y-%m-%d %H:%M')}</div>
 </div></body></html>"""

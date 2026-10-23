@@ -2,7 +2,10 @@
 """
 一键跑完：采集 -> 去重/变化检测 -> 出报告 -> 订阅匹配 -> 推送
 失败自动重试，跑完写 health.json，异常时退出码非 0（方便 GitHub Actions 告警）。
+
+采集页数可通过环境变量 PAGES 控制（默认 2 页/源）。
 """
+import os
 import subprocess
 import sys
 import time
@@ -10,9 +13,10 @@ from pathlib import Path
 
 HERE = Path(__file__).parent
 PY = sys.executable
+PAGES = os.getenv("PAGES", "2")
 
 STEPS = [
-    ("采集", [PY, "collect.py", "3"]),
+    ("采集", [PY, "collect.py", PAGES]),
     ("报告", [PY, "report.py"]),
     ("推送", [PY, "push.py"]),
 ]
