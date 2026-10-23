@@ -1,0 +1,24 @@
+{
+  "subscriptions": [
+    {
+      "name": "信息化/软件/系统集成",
+      "keywords": ["软件", "信息系统", "服务器", "数据", "网络安全", "平台", "系统集成", "智算"],
+      "min_budget": 500000,
+      "max_days_left": 30
+    },
+    {
+      "name": "大额项目（1000万以上）",
+      "keywords": [],
+      "min_budget": 10000000,
+      "max_days_left": 30
+    }
+  ],
+  "telegram_bot_token": "",
+  "telegram_chat_id": "",
+  "wecom_webhook": "",
+  "smtp_host": "",
+  "smtp_port": 465,
+  "smtp_user": "",
+  "smtp_pass": "",
+  "mail_to": []
+}

@@ -1,0 +1,39 @@
+name: tender-daily
+
+on:
+  schedule:
+    # 每天 08:00 北京时间 = 00:00 UTC
+    - cron: "0 0 * * *"
+  workflow_dispatch: {}
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: 安装依赖
+        run: pip install -r requirements.txt
+
+      - name: 采集并生成报告
+        env:
+          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+          TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+          WECOM_WEBHOOK: ${{ secrets.WECOM_WEBHOOK }}
+          SMTP_PASS: ${{ secrets.SMTP_PASS }}
+        run: python run.py
+
+      - name: 上传报告
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tender-report
+          path: out/
+          retention-days: 30
+          if-no-files-found: warn
