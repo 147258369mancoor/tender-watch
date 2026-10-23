@@ -5,6 +5,16 @@ on:
     # 每天 08:00 北京时间 = 00:00 UTC
     - cron: "0 0 * * *"
   workflow_dispatch: {}
+  push:
+    branches: [main]
+    paths-ignore:
+      - "**.md"
+      - "LICENSE"
+
+# 同一时间只跑一个，避免定时和手动触发打架
+concurrency:
+  group: tender-daily
+  cancel-in-progress: false
 
 jobs:
   collect:
